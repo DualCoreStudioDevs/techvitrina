@@ -1,5 +1,5 @@
 // src/components/Footer.jsx
-import { MessageCircle, Mail, ShoppingBag, ExternalLink } from "lucide-react";
+import { MessageCircle, Mail, ShoppingBag } from "lucide-react";
 
 const WA_NUMBER = "18091234567";           // 👈 CAMBIA por tu número
 const INSTAGRAM = "techvitrina_do";        // 👈 CAMBIA (sin @)
