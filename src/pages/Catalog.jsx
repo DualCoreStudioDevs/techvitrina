@@ -1,18 +1,12 @@
 // src/pages/Catalog.jsx
-//
-// Catálogo de productos usando el hook centralizado useCatalog.
-// Admin y cliente consumen la misma colección de Firebase via el hook.
-// Los filtros (incluida la categoría del CategoryGrid) nunca se "pierden"
-// porque toda la lógica vive en un solo estado de useCatalog.
-//
-import { Suspense, lazy, Component } from "react";
+import { useState, useMemo, Suspense, lazy, Component } from "react";
+import { useProducts } from "../hooks/useProducts";
 import { SlidersHorizontal, X, ChevronDown, Package } from "lucide-react";
 
-import { useCatalog }     from "../hooks/useCatalog";
-import Navbar             from "../components/Navbar";
-import HeroCarousel       from "../components/HeroCarousel";
-import CategoryGrid, { CATEGORIES } from "../components/CategoryGrid";
-import CartDrawer         from "../components/CartDrawer";
+import Navbar from "../components/Navbar";
+import HeroCarousel from "../components/HeroCarousel";
+import CategoryGrid from "../components/CategoryGrid";
+import CartDrawer from "../components/CartDrawer";
 
 const ProductCard  = safeLazy(() => import("../components/ProductCard"));
 const ProductModal = safeLazy(() => import("../components/ProductModal"));
@@ -35,46 +29,39 @@ const BRANDS     = ["Todas", "Apple", "Samsung", "Xiaomi", "Huawei", "OnePlus", 
 const CONDITIONS = ["Todos", "Nuevo", "Usado"];
 
 export default function Catalog() {
-  // ── Hook centralizado — única fuente de verdad para productos y filtros ──
-  const {
-    filtered,
-    loading,
-    filters,
-    setFilter,
-    clearFilters,
-    hasFilters,
-  } = useCatalog();
+  const { products, loading } = useProducts();
 
-  const [selected,    setSelected]    = window.React
-    ? window.React.useState(null)
-    : (() => { throw new Error("React not found"); })();
-  const [showFilters, setShowFilters] = window.React.useState(false);
+  const [search,      setSearch]      = useState("");
+  const [category,    setCategory]    = useState("Todos");
+  const [brand,       setBrand]       = useState("Todas");
+  const [condition,   setCondition]   = useState("Todos");
+  const [selected,    setSelected]    = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+
+  const filtered = useMemo(() => {
+    if (!Array.isArray(products)) return [];
+    return products.filter((p) => {
+      const q  = search.toLowerCase();
+      const ms = !q || p.name?.toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q);
+      const mc = category  === "Todos"  || p.category  === category;
+      const mb = brand     === "Todas"  || p.brand     === brand;
+      const mn = condition === "Todos"  || p.condition === condition;
+      return ms && mc && mb && mn;
+    });
+  }, [products, search, category, brand, condition]);
+
+  const clearFilters = () => {
+    setSearch(""); setCategory("Todos"); setBrand("Todas"); setCondition("Todos");
+  };
+  const hasFilters = search || category !== "Todos" || brand !== "Todas" || condition !== "Todos";
 
   return (
     <div className="min-h-screen bg-zinc-950 flex flex-col">
-      <Navbar
-        search={filters.search}
-        onSearch={(v) => setFilter("search", v)}
-      />
+      <Navbar search={search} onSearch={setSearch} />
+      <HeroCarousel />
+      <CategoryGrid activeCategory={category} onSelect={setCategory} />
 
-      {/* Carrusel: el CTA de cada slide activa el filtro de categoría */}
-      <HeroCarousel
-        onFilter={(category) => {
-          setFilter("category", category);
-          // Scroll suave hasta el grid de productos
-          document
-            .getElementById("product-grid")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }}
-      />
-
-      {/* Grid de categorías — sincronizado con el filtro activo */}
-      <CategoryGrid
-        activeCategory={filters.category}
-        onSelect={(cat) => setFilter("category", cat)}
-      />
-
-      {/* Filtros secundarios */}
+      {/* Secondary filters */}
       <div className="border-b border-zinc-800/50 px-4 sm:px-6 py-3 bg-zinc-900/30">
         <div className="max-w-7xl mx-auto flex items-center gap-3 flex-wrap">
           <button
@@ -91,10 +78,10 @@ export default function Catalog() {
 
           {hasFilters && (
             <div className="flex flex-wrap gap-2 items-center">
-              {filters.search    && <Chip label={`"${filters.search}"`}   onRemove={() => setFilter("search", "")} />}
-              {filters.category !== "Todos"  && <Chip label={filters.category}  onRemove={() => setFilter("category", "Todos")} />}
-              {filters.brand    !== "Todas"  && <Chip label={filters.brand}     onRemove={() => setFilter("brand", "Todas")} />}
-              {filters.condition !== "Todos" && <Chip label={filters.condition} onRemove={() => setFilter("condition", "Todos")} />}
+              {search     && <Chip label={`"${search}"`}  onRemove={() => setSearch("")} />}
+              {category  !== "Todos"  && <Chip label={category}  onRemove={() => setCategory("Todos")} />}
+              {brand     !== "Todas"  && <Chip label={brand}     onRemove={() => setBrand("Todas")} />}
+              {condition !== "Todos"  && <Chip label={condition} onRemove={() => setCondition("Todos")} />}
               <button onClick={clearFilters} className="text-zinc-500 hover:text-white text-xs underline">
                 Limpiar todo
               </button>
@@ -107,48 +94,14 @@ export default function Catalog() {
         </div>
 
         {showFilters && (
-          <div className="max-w-7xl mx-auto mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <FilterSelect
-              label="Marca"
-              value={filters.brand}
-              onChange={(v) => setFilter("brand", v)}
-              options={BRANDS}
-            />
-            <FilterSelect
-              label="Estado"
-              value={filters.condition}
-              onChange={(v) => setFilter("condition", v)}
-              options={CONDITIONS}
-            />
-            {/* Rango de precio opcional */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-zinc-500 text-xs uppercase tracking-wider block mb-1">Precio mín.</label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={filters.minPrice}
-                  onChange={(e) => setFilter("minPrice", e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 focus:border-violet-500 rounded-lg px-3 py-2 text-sm text-white outline-none transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-zinc-500 text-xs uppercase tracking-wider block mb-1">Precio máx.</label>
-                <input
-                  type="number"
-                  placeholder="∞"
-                  value={filters.maxPrice}
-                  onChange={(e) => setFilter("maxPrice", e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 focus:border-violet-500 rounded-lg px-3 py-2 text-sm text-white outline-none transition-colors"
-                />
-              </div>
-            </div>
+          <div className="max-w-7xl mx-auto mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FilterSelect label="Marca"  value={brand}     onChange={setBrand}     options={BRANDS} />
+            <FilterSelect label="Estado" value={condition} onChange={setCondition} options={CONDITIONS} />
           </div>
         )}
       </div>
 
-      {/* Grid de productos */}
-      <main id="product-grid" className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
@@ -193,8 +146,6 @@ export default function Catalog() {
     </div>
   );
 }
-
-// ── Sub-components ────────────────────────────────────────────────────────────
 
 function FilterSelect({ label, value, onChange, options }) {
   return (
