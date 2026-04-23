@@ -1,17 +1,19 @@
 // src/components/ProductCard.jsx
-import { Package, MessageCircle } from "lucide-react";
-
-const WA_NUMBER = "18091234567"; // 👈 CAMBIA ESTE NÚMERO
+import { Package, ShoppingCart, Check } from "lucide-react";
+import { useState } from "react";
+import { useCart } from "../context/CartContext";
 
 export default function ProductCard({ product, onClick }) {
+  const { addItem } = useCart();
+  const [added, setAdded] = useState(false);
   const inStock = Number(product.stock) > 0;
 
-  const handleWhatsApp = (e) => {
+  const handleAddToCart = (e) => {
     e.stopPropagation();
-    const text = encodeURIComponent(
-      `Hola, me interesa el ${product.name} con precio RD$${Number(product.price).toLocaleString("es-DO")}`
-    );
-    window.open(`https://wa.me/${WA_NUMBER}?text=${text}`, "_blank");
+    if (!inStock) return;
+    addItem(product);
+    setAdded(true);
+    setTimeout(() => setAdded(false), 1800);
   };
 
   return (
@@ -71,12 +73,19 @@ export default function ProductCard({ product, onClick }) {
           </p>
           {inStock && (
             <button
-              onClick={handleWhatsApp}
-              className="flex items-center gap-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-2.5 py-1.5 rounded-lg transition-colors flex-shrink-0"
-              title="Contactar por WhatsApp"
+              onClick={handleAddToCart}
+              title="Añadir al carrito"
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all flex-shrink-0 font-medium ${
+                added
+                  ? "bg-emerald-600 text-white scale-95"
+                  : "bg-violet-700 hover:bg-violet-600 text-white"
+              }`}
             >
-              <MessageCircle size={12} />
-              WA
+              {added ? (
+                <><Check size={12} /> Añadido</>
+              ) : (
+                <><ShoppingCart size={12} /> Comprar</>
+              )}
             </button>
           )}
         </div>

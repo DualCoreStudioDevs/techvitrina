@@ -1,26 +1,21 @@
 // src/pages/Catalog.jsx
-//
-// Versión robusta: funciona aunque ProductCard, ProductModal o Footer
-// aún no existan. Usa lazy + ErrorBoundary local por componente.
-//
 import { useState, useMemo, Suspense, lazy, Component } from "react";
 import { useProducts } from "../hooks/useProducts";
-import { Search, SlidersHorizontal, ShoppingBag, X, ChevronDown, Package } from "lucide-react";
+import { SlidersHorizontal, X, ChevronDown, Package } from "lucide-react";
 
-// ── Lazy con fallback si el archivo no existe aún ────────────────────────────
+import Navbar from "../components/Navbar";
+import HeroCarousel from "../components/HeroCarousel";
+import CategoryGrid from "../components/CategoryGrid";
+import CartDrawer from "../components/CartDrawer";
+
 const ProductCard  = safeLazy(() => import("../components/ProductCard"));
 const ProductModal = safeLazy(() => import("../components/ProductModal"));
 const Footer       = safeLazy(() => import("../components/Footer"));
 
 function safeLazy(importFn) {
-  return lazy(() =>
-    importFn().catch(() => ({
-      default: () => null,   // si el archivo no existe → renderiza nada
-    }))
-  );
+  return lazy(() => importFn().catch(() => ({ default: () => null })));
 }
 
-// ── Error boundary local ──────────────────────────────────────────────────────
 class ErrBoundary extends Component {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
@@ -30,12 +25,9 @@ class ErrBoundary extends Component {
   }
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-const CATEGORIES = ["Todos", "Móviles", "Accesorios", "Piezas"];
 const BRANDS     = ["Todas", "Apple", "Samsung", "Xiaomi", "Huawei", "OnePlus", "Motorola", "Otro"];
 const CONDITIONS = ["Todos", "Nuevo", "Usado"];
 
-// ── Main component ────────────────────────────────────────────────────────────
 export default function Catalog() {
   const { products, loading } = useProducts();
 
@@ -63,133 +55,85 @@ export default function Catalog() {
   };
   const hasFilters = search || category !== "Todos" || brand !== "Todas" || condition !== "Todos";
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-zinc-950 flex flex-col">
+      <Navbar search={search} onSearch={setSearch} />
+      <HeroCarousel />
+      <CategoryGrid activeCategory={category} onSelect={setCategory} />
 
-      {/* Navbar */}
-      <header className="bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
-          {/* Logo */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="bg-violet-600 p-2 rounded-lg">
-              <ShoppingBag size={18} className="text-white" />
-            </div>
-            <span className="hidden sm:block font-semibold text-white text-sm">TechVitrina</span>
-          </div>
-
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar producto o marca…"
-              className="w-full bg-zinc-800 border border-zinc-700 focus:border-violet-500 rounded-xl pl-9 pr-9 py-2 text-sm text-white outline-none transition-colors placeholder:text-zinc-600"
-            />
-            {search && (
-              <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2">
-                <X size={13} className="text-zinc-500 hover:text-white" />
-              </button>
-            )}
-          </div>
-
-          {/* Filter toggle */}
+      {/* Secondary filters */}
+      <div className="border-b border-zinc-800/50 px-4 sm:px-6 py-3 bg-zinc-900/30">
+        <div className="max-w-7xl mx-auto flex items-center gap-3 flex-wrap">
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl border text-sm transition-all
-              ${showFilters
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs transition-all ${
+              showFilters
                 ? "bg-violet-600 border-violet-500 text-white"
-                : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500"}`}
+                : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500"
+            }`}
           >
-            <SlidersHorizontal size={14} />
-            <span className="hidden sm:inline">Filtros</span>
+            <SlidersHorizontal size={12} />
+            Más filtros
           </button>
+
+          {hasFilters && (
+            <div className="flex flex-wrap gap-2 items-center">
+              {search     && <Chip label={`"${search}"`}  onRemove={() => setSearch("")} />}
+              {category  !== "Todos"  && <Chip label={category}  onRemove={() => setCategory("Todos")} />}
+              {brand     !== "Todas"  && <Chip label={brand}     onRemove={() => setBrand("Todas")} />}
+              {condition !== "Todos"  && <Chip label={condition} onRemove={() => setCondition("Todos")} />}
+              <button onClick={clearFilters} className="text-zinc-500 hover:text-white text-xs underline">
+                Limpiar todo
+              </button>
+            </div>
+          )}
+
+          <span className="ml-auto text-zinc-600 text-xs">
+            {loading ? "Cargando…" : `${filtered.length} resultados`}
+          </span>
         </div>
 
-        {/* Expanded filters */}
         {showFilters && (
-          <div className="border-t border-zinc-800 px-4 sm:px-6 py-4">
-            <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <FilterSelect label="Categoría" value={category}  onChange={setCategory}  options={CATEGORIES} />
-              <FilterSelect label="Marca"     value={brand}     onChange={setBrand}     options={BRANDS} />
-              <FilterSelect label="Estado"    value={condition} onChange={setCondition} options={CONDITIONS} />
-            </div>
+          <div className="max-w-7xl mx-auto mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FilterSelect label="Marca"  value={brand}     onChange={setBrand}     options={BRANDS} />
+            <FilterSelect label="Estado" value={condition} onChange={setCondition} options={CONDITIONS} />
           </div>
         )}
-      </header>
-
-      {/* Hero */}
-      <div className="border-b border-zinc-800/50 px-4 sm:px-6 py-6 bg-violet-950/20">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl font-bold text-white">Catálogo de dispositivos</h1>
-          <p className="text-zinc-400 text-sm mt-1">
-            {loading ? "Cargando inventario…" : `${products.length} producto${products.length !== 1 ? "s" : ""} disponibles`}
-          </p>
-        </div>
       </div>
 
-      {/* Active filter chips */}
-      {hasFilters && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-3 flex flex-wrap gap-2 items-center">
-          <span className="text-zinc-600 text-xs">Activos:</span>
-          {search     && <Chip label={`"${search}"`}  onRemove={() => setSearch("")} />}
-          {category  !== "Todos"  && <Chip label={category}  onRemove={() => setCategory("Todos")} />}
-          {brand     !== "Todas"  && <Chip label={brand}     onRemove={() => setBrand("Todas")} />}
-          {condition !== "Todos"  && <Chip label={condition} onRemove={() => setCondition("Todos")} />}
-          <button onClick={clearFilters} className="text-zinc-500 hover:text-white text-xs underline ml-1">
-            Limpiar todo
-          </button>
-        </div>
-      )}
-
-      {/* Grid */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
         {loading ? (
-          /* Skeleton */
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
           </div>
         ) : filtered.length === 0 ? (
-          /* Empty state */
           <div className="flex flex-col items-center justify-center py-28 text-center">
             <Package size={52} className="text-zinc-800 mb-4" />
             <p className="text-zinc-400 text-lg font-medium">Sin resultados</p>
-            <p className="text-zinc-600 text-sm mt-1">Prueba con otros filtros o términos de búsqueda</p>
+            <p className="text-zinc-600 text-sm mt-1">Prueba con otros filtros</p>
             {hasFilters && (
-              <button
-                onClick={clearFilters}
-                className="mt-4 text-violet-400 hover:text-violet-300 text-sm underline"
-              >
+              <button onClick={clearFilters} className="mt-4 text-violet-400 hover:text-violet-300 text-sm underline">
                 Limpiar filtros
               </button>
             )}
           </div>
         ) : (
-          <>
-            <p className="text-zinc-500 text-xs mb-4">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {filtered.map((product) => (
-                <ErrBoundary key={product.id} fallback={<FallbackCard product={product} />}>
-                  <Suspense fallback={<SkeletonCard />}>
-                    <ProductCard product={product} onClick={() => setSelected(product)} />
-                  </Suspense>
-                </ErrBoundary>
-              ))}
-            </div>
-          </>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filtered.map((product) => (
+              <ErrBoundary key={product.id} fallback={<FallbackCard product={product} />}>
+                <Suspense fallback={<SkeletonCard />}>
+                  <ProductCard product={product} onClick={() => setSelected(product)} />
+                </Suspense>
+              </ErrBoundary>
+            ))}
+          </div>
         )}
       </main>
 
-      {/* Footer */}
       <ErrBoundary fallback={<SimpleFooter />}>
-        <Suspense fallback={null}>
-          <Footer />
-        </Suspense>
+        <Suspense fallback={null}><Footer /></Suspense>
       </ErrBoundary>
 
-      {/* Modal */}
       {selected && (
         <ErrBoundary fallback={null}>
           <Suspense fallback={null}>
@@ -197,11 +141,11 @@ export default function Catalog() {
           </Suspense>
         </ErrBoundary>
       )}
+
+      <CartDrawer />
     </div>
   );
 }
-
-// ── Helper sub-components ────────────────────────────────────────────────────
 
 function FilterSelect({ label, value, onChange, options }) {
   return (
@@ -243,19 +187,15 @@ function SkeletonCard() {
   );
 }
 
-// Tarjeta mínima de fallback si ProductCard falla
 function FallbackCard({ product }) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
       <p className="text-white text-sm font-medium">{product?.name ?? "Producto"}</p>
-      <p className="text-violet-400 text-sm mt-1">
-        RD$ {Number(product?.price ?? 0).toLocaleString("es-DO")}
-      </p>
+      <p className="text-violet-400 text-sm mt-1">RD$ {Number(product?.price ?? 0).toLocaleString("es-DO")}</p>
     </div>
   );
 }
 
-// Footer mínimo de fallback
 function SimpleFooter() {
   return (
     <footer className="border-t border-zinc-800 py-6 text-center text-zinc-600 text-xs">

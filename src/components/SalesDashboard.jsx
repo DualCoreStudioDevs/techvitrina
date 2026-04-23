@@ -1,17 +1,110 @@
 // src/components/SalesDashboard.jsx
-import { useState } from "react";
+// Dashboard con filtros Día / Semana / Mes / Año y gráfico dinámico.
+import { useState, useMemo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import {
   TrendingUp, ShoppingCart, Award, Printer,
-  ChevronDown, ChevronUp, Clock,
+  ChevronDown, ChevronUp, Clock, Calendar,
 } from "lucide-react";
 import { useVentas } from "../hooks/useVentas";
 import Receipt from "./Receipt";
 
-// ── Tooltip personalizado para el gráfico ─────────────────────────────────
+// ── Period helpers ────────────────────────────────────────────────────────────
+function startOf(period) {
+  const now = new Date();
+  if (period === "day") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+  if (period === "week") {
+    const d = new Date(now);
+    d.setDate(now.getDate() - now.getDay()); // Sunday start
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  if (period === "month") {
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  if (period === "year") {
+    return new Date(now.getFullYear(), 0, 1);
+  }
+  return new Date(0);
+}
+
+function buildChartData(ventas, period) {
+  const now = new Date();
+
+  if (period === "day") {
+    // 24-hour slots
+    return Array.from({ length: 24 }, (_, h) => {
+      const total = ventas
+        .filter((v) => {
+          if (!v.fecha) return false;
+          const d = v.fecha.toDate ? v.fecha.toDate() : new Date(v.fecha);
+          return (
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth()    === now.getMonth() &&
+            d.getDate()     === now.getDate() &&
+            d.getHours()    === h
+          );
+        })
+        .reduce((s, v) => s + (v.precioTotal || 0), 0);
+      return { label: `${h}:00`, total };
+    });
+  }
+
+  if (period === "week") {
+    const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now);
+      d.setDate(now.getDate() - now.getDay() + i);
+      const total = ventas
+        .filter((v) => {
+          if (!v.fecha) return false;
+          const vd = v.fecha.toDate ? v.fecha.toDate() : new Date(v.fecha);
+          return vd.toDateString() === d.toDateString();
+        })
+        .reduce((s, v) => s + (v.precioTotal || 0), 0);
+      return { label: days[i], total };
+    });
+  }
+
+  if (period === "month") {
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1;
+      const total = ventas
+        .filter((v) => {
+          if (!v.fecha) return false;
+          const vd = v.fecha.toDate ? v.fecha.toDate() : new Date(v.fecha);
+          return vd.getFullYear() === now.getFullYear() &&
+                 vd.getMonth()    === now.getMonth() &&
+                 vd.getDate()     === day;
+        })
+        .reduce((s, v) => s + (v.precioTotal || 0), 0);
+      return { label: `${day}`, total };
+    });
+  }
+
+  if (period === "year") {
+    const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    return Array.from({ length: 12 }, (_, m) => {
+      const total = ventas
+        .filter((v) => {
+          if (!v.fecha) return false;
+          const vd = v.fecha.toDate ? v.fecha.toDate() : new Date(v.fecha);
+          return vd.getFullYear() === now.getFullYear() && vd.getMonth() === m;
+        })
+        .reduce((s, v) => s + (v.precioTotal || 0), 0);
+      return { label: months[m], total };
+    });
+  }
+  return [];
+}
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
@@ -24,7 +117,6 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-// ── Stat card ─────────────────────────────────────────────────────────────
 function StatCard({ icon: Icon, label, value, sub, color }) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-start gap-4">
@@ -40,16 +132,46 @@ function StatCard({ icon: Icon, label, value, sub, color }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────
+// ── Periods config ────────────────────────────────────────────────────────────
+const PERIODS = [
+  { key: "day",   label: "Hoy" },
+  { key: "week",  label: "Esta semana" },
+  { key: "month", label: "Este mes" },
+  { key: "year",  label: "Este año" },
+];
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function SalesDashboard() {
-  const { ventas, loading, statsDelMes } = useVentas();
+  const { ventas, loading } = useVentas();
+  const [period,       setPeriod]       = useState("month");
   const [selectedVenta, setSelectedVenta] = useState(null);
-  const [showAll,        setShowAll]       = useState(false);
+  const [showAll,       setShowAll]      = useState(false);
 
-  const { totalVentas, numTransacciones, masVendido, porDia } = statsDelMes();
+  // Filter ventas by selected period
+  const periodStart = useMemo(() => startOf(period), [period]);
+  const periodVentas = useMemo(() =>
+    ventas.filter((v) => {
+      if (!v.fecha) return false;
+      const d = v.fecha.toDate ? v.fecha.toDate() : new Date(v.fecha);
+      return d >= periodStart;
+    }),
+    [ventas, periodStart]
+  );
 
-  const mesNombre = new Date().toLocaleDateString("es-DO", { month: "long", year: "numeric" });
-  const ventasVis = showAll ? ventas : ventas.slice(0, 8);
+  // Stats
+  const totalVentas      = periodVentas.reduce((s, v) => s + (v.precioTotal || 0), 0);
+  const numTransacciones = periodVentas.length;
+  const conteo = {};
+  periodVentas.forEach((v) => {
+    conteo[v.productoNombre] = (conteo[v.productoNombre] || 0) + (v.cantidad || 1);
+  });
+  const masVendido = Object.entries(conteo).sort((a, b) => b[1] - a[1])[0];
+
+  // Chart data
+  const chartData = useMemo(() => buildChartData(ventas, period), [ventas, period]);
+
+  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "";
+  const ventasVis   = showAll ? ventas : ventas.slice(0, 8);
 
   if (loading) {
     return (
@@ -62,19 +184,38 @@ export default function SalesDashboard() {
   return (
     <div className="space-y-6">
 
-      {/* ── Stats cards */}
+      {/* ── Period selector ── */}
+      <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl p-1.5">
+        <Calendar size={14} className="text-zinc-500 ml-2 flex-shrink-0" />
+        {PERIODS.map((p) => (
+          <button
+            key={p.key}
+            onClick={() => setPeriod(p.key)}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+              period === p.key
+                ? "bg-violet-600 text-white shadow-lg shadow-violet-900/30"
+                : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Stats ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           icon={TrendingUp}
-          label={`Ventas — ${mesNombre}`}
+          label={`Ventas — ${periodLabel}`}
           value={`RD$ ${totalVentas.toLocaleString("es-DO")}`}
           sub={`${numTransacciones} transacción${numTransacciones !== 1 ? "es" : ""}`}
           color="bg-violet-600"
         />
         <StatCard
           icon={ShoppingCart}
-          label="Transacciones del mes"
+          label="Transacciones"
           value={numTransacciones}
+          sub={periodLabel}
           color="bg-emerald-700"
         />
         <StatCard
@@ -86,31 +227,39 @@ export default function SalesDashboard() {
         />
       </div>
 
-      {/* ── Chart */}
+      {/* ── Chart ── */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-800">
-          <h3 className="font-semibold text-white">Ventas — últimos 7 días</h3>
+        <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+          <h3 className="font-semibold text-white">
+            Ventas — <span className="text-violet-400">{periodLabel}</span>
+          </h3>
+          {totalVentas > 0 && (
+            <span className="text-zinc-500 text-xs">
+              RD$ {totalVentas.toLocaleString("es-DO")} total
+            </span>
+          )}
         </div>
         <div className="p-4 h-52">
-          {porDia.every((d) => d.total === 0) ? (
+          {chartData.every((d) => d.total === 0) ? (
             <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
-              No hay ventas en los últimos 7 días
+              No hay ventas en este período
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={porDia} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  tick={{ fill: "#71717a", fontSize: 12 }}
+                  tick={{ fill: "#71717a", fontSize: period === "month" ? 9 : 11 }}
                   axisLine={false}
                   tickLine={false}
+                  interval={period === "month" ? 2 : period === "day" ? 3 : 0}
                 />
                 <YAxis
                   tick={{ fill: "#71717a", fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                  tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}
                   width={36}
                 />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(139,92,246,0.08)" }} />
@@ -121,7 +270,7 @@ export default function SalesDashboard() {
         </div>
       </div>
 
-      {/* ── Sales history table */}
+      {/* ── Sales history ── */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
           <h3 className="font-semibold text-white flex items-center gap-2">
@@ -152,9 +301,7 @@ export default function SalesDashboard() {
                 </thead>
                 <tbody className="divide-y divide-zinc-800/50">
                   {ventasVis.map((v) => {
-                    const fecha = v.fecha?.toDate
-                      ? v.fecha.toDate()
-                      : new Date();
+                    const fecha = v.fecha?.toDate ? v.fecha.toDate() : new Date();
                     const fechaStr = fecha.toLocaleDateString("es-DO", {
                       day: "2-digit", month: "short", year: "numeric",
                     });
